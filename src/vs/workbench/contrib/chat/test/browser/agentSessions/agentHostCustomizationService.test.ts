@@ -10,7 +10,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ILogService, NullLogService, ILoggerService, NullLoggerService } from '../../../../../../platform/log/common/log.js';
 import { InMemoryStorageService, IStorageService } from '../../../../../../platform/storage/common/storage.js';
-import { CustomizationType, McpServerCustomization, McpServerStatus } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { type Customization, CustomizationType, McpServerCustomization, McpServerStatus } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ContributionEnablementState } from '../../../common/enablement.js';
 import { AbstractAgentHostCustomizationService, IAgentHostCustomizationTarget } from '../../../browser/agentSessions/agentHost/agentHostCustomizationService.js';
 import { IOutputService } from '../../../../../services/output/common/output.js';
@@ -32,14 +32,22 @@ class FakeTarget implements IAgentHostCustomizationTarget {
 	readonly dispatched: IDispatchedToggle[] = [];
 
 	constructor(
-		readonly customizations: McpServerCustomization[],
+		readonly customizations: Customization[],
 		readonly workingDirectory?: string,
 	) { }
 
 	authenticate(): Promise<unknown> { return Promise.resolve(undefined); }
 	setCustomizationEnabled(rawId: string, enabled: boolean): void {
 		this.dispatched.push({ rawId, enabled });
-		const server = this.customizations.find(c => c.id === rawId);
+		const topLevel = this.customizations.find(customization => customization.id === rawId);
+		if (topLevel) {
+			topLevel.enabled = enabled;
+			return;
+		}
+		const server = this.customizations.flatMap(customization => customization.type === CustomizationType.McpServer
+			? [customization]
+			: customization.children?.filter(child => child.type === CustomizationType.McpServer) ?? []
+		).find(customization => customization.id === rawId);
 		if (server) {
 			server.enabled = enabled;
 		}
@@ -182,6 +190,60 @@ suite('AbstractAgentHostCustomizationService - MCP server enablement', () => {
 
 		assert.ok(first.logOutputChannelId);
 		assert.strictEqual(second.logOutputChannelId, first.logOutputChannelId);
+	});
+
+	test('getMcpServers retains same-named sources and applies container enablement', () => {
+		const sut = createSut();
+		const childGitHub = mcpServer('gh-child', 'GitHub', true);
+		const topLevelGitHub = mcpServer('gh-top-level', 'GitHub', false);
+		const lowerCaseGitHub = mcpServer('gh-lower-case', 'github', true);
+		const target = new FakeTarget([
+			{
+				type: CustomizationType.Plugin,
+				id: 'plugin',
+				uri: 'file:///plugin',
+				name: 'Plugin',
+				enabled: false,
+				children: [childGitHub],
+			},
+			topLevelGitHub,
+			lowerCaseGitHub,
+		]);
+		sut.setTarget(sessionA1, target);
+
+		const servers = sut.getMcpServers(sessionA1);
+		servers[0].setEnabled(true);
+
+		assert.deepStrictEqual({
+			servers: servers.map(server => ({
+				id: server.id,
+				name: server.name,
+				enabled: server.enabled,
+				...(server.container ? { container: server.container } : {}),
+			})),
+			dispatched: target.dispatched,
+		}, {
+			servers: [
+				{
+					id: 'session-a1/gh-child',
+					name: 'GitHub',
+					enabled: false,
+					container: {
+						id: 'plugin',
+						name: 'Plugin',
+						uri: 'file:///plugin',
+						type: CustomizationType.Plugin,
+						enabled: false,
+					},
+				},
+				{ id: 'session-a1/gh-top-level', name: 'GitHub', enabled: false },
+				{ id: 'session-a1/gh-lower-case', name: 'github', enabled: true },
+			],
+			dispatched: [
+				{ rawId: 'plugin', enabled: true },
+				{ rawId: 'gh-child', enabled: true },
+			],
+		});
 	});
 
 	test('does not reapply unchanged durable policy, preserving a later session-level toggle', () => {
