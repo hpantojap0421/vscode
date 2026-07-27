@@ -13,13 +13,22 @@
 	padding: 0 var(--vscode-spacing-size80);
 }
 
+/* The header paints the dark editor backdrop the cards sit on (same as the
+ * multi-diff panel and the inter-card gaps), so nothing lighter bleeds through
+ * the `.header-content` top margin or around its rounded corners. It must stay
+ * opaque because the header is sticky and has to occlude the diff content that
+ * scrolls beneath it. The visible header tint lives on `.header-content`. */
 .agent-sessions-workbench .part.editor .multiDiffEntry .header {
 	cursor: pointer;
 	background: var(--vscode-multiDiffEditor-background);
 	position: relative;
 }
 
-/* The header and editor borders form one continuous card. */
+/* The header and editor borders form one continuous card. The inter-card gap
+ * (top margin) is kept on the 4px step so the collapsed header — chevron row
+ * (24px) + vertical padding + top/bottom borders — plus this gap stays within
+ * the fixed 40px header slot; otherwise `.multiDiffEntry { overflow: hidden }`
+ * clips the collapsed card's bottom border. */
 .agent-sessions-workbench .part.editor .multiDiffEntry .header-content {
 	border-top-left-radius: var(--vscode-cornerRadius-medium);
 	border-top-right-radius: var(--vscode-cornerRadius-medium);
@@ -28,7 +37,7 @@
 	border: var(--vscode-strokeThickness) solid var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
 	border-bottom: none;
 	background: var(--vscode-sideBarSectionHeader-background);
-	margin: var(--vscode-spacing-size80) 0 0 0;
+	margin: var(--vscode-spacing-size40) 0 0 0;
 	padding-left: var(--vscode-spacing-sizeNone);
 	align-items: center;
 }
@@ -97,13 +106,19 @@
 	visibility: visible;
 }
 
-/* Match the collapse chevron's target and states to the file toolbar actions. */
+/* Match the collapse chevron's target and states to the file toolbar actions.
+ * Both the chevron and the secondary file actions sit on the 4px target-size
+ * step so their hit targets stay consistent. */
 .agent-sessions-workbench .part.editor .multiDiffEntry .collapse-button a {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	padding: 3px;
+	padding: var(--vscode-spacing-size40);
 	border-radius: var(--vscode-cornerRadius-medium);
+}
+
+.agent-sessions-workbench .part.editor .multiDiffEntry .header-content .actions-container .action-item:not(.changeset-review-action) .action-label {
+	padding: var(--vscode-spacing-size40);
 }
 
 .agent-sessions-workbench .part.editor .multiDiffEntry .collapse-button a:hover,
@@ -134,10 +149,10 @@
 	border-color: var(--vscode-focusBorder);
 }
 
-.hc-black .agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content,
-.hc-black .agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent,
-.hc-light .agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content,
-.hc-light .agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent {
+.hc-black.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content,
+.hc-black.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent,
+.hc-light.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content,
+.hc-light.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent {
 	border-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
 }
 
