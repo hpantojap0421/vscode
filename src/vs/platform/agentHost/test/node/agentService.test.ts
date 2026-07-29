@@ -469,7 +469,7 @@ suite('AgentService (node dispatcher)', () => {
 		await localService.createSession({
 			provider: 'codex',
 			session,
-			workingDirectory,
+			workingDirectories: workingDirectory ? [workingDirectory] : undefined,
 			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
 		});
 		const failedSession = AgentSession.uri('codex', 'failed-before-create');
@@ -477,7 +477,7 @@ suite('AgentService (node dispatcher)', () => {
 		await assert.rejects(localService.createSession({
 			provider: 'codex',
 			session: failedSession,
-			workingDirectory,
+			workingDirectories: workingDirectory ? [workingDirectory] : undefined,
 			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
 		}), /create failed/);
 
@@ -522,12 +522,12 @@ suite('AgentService (node dispatcher)', () => {
 
 		const creatingSession = await localService.createSession({
 			provider: 'codex',
-			workingDirectory: URI.file('/workspace/repo'),
+			workingDirectories: [URI.file('/workspace/repo')],
 			config: { [SessionConfigKey.Isolation]: 'folder' },
 		});
 		const readySession = await localService.createSession({
 			provider: 'copilot',
-			workingDirectory: URI.file('/workspace/repo'),
+			workingDirectories: [URI.file('/workspace/repo')],
 			config: { [SessionConfigKey.Isolation]: 'folder' },
 		});
 		const creatingInitially = localService.configurationService.isWorkingDirectoryPending(creatingSession.toString());
@@ -1093,6 +1093,43 @@ suite('AgentService (node dispatcher)', () => {
 			assert.strictEqual(AgentSession.provider(session), 'copilot');
 		});
 
+		test('truncates working directories for a provider without multipleWorkingDirectories', async () => {
+			class CapturingAgent extends MockAgent {
+				lastConfig: IAgentCreateSessionConfig | undefined;
+				constructor(id: string, private readonly _caps: import('../../common/agentService.js').IAgentCapabilities | undefined) {
+					super(id);
+				}
+				override getDescriptor() {
+					return { ...super.getDescriptor(), capabilities: this._caps };
+				}
+				override async createSession(config?: IAgentCreateSessionConfig): Promise<IAgentCreateSessionResult> {
+					this.lastConfig = config;
+					return super.createSession(config);
+				}
+			}
+
+			const single = new CapturingAgent('single', undefined);
+			const multi = new CapturingAgent('multi', { multipleWorkingDirectories: { immutablePrimary: true } });
+			disposables.add(toDisposable(() => single.dispose()));
+			disposables.add(toDisposable(() => multi.dispose()));
+			service.registerProvider(single);
+			service.registerProvider(multi);
+
+			const dirs = [URI.file('/repoA'), URI.file('/repoB'), URI.file('/repoC')];
+			await service.createSession({ provider: 'single', workingDirectories: dirs });
+			await service.createSession({ provider: 'multi', workingDirectories: dirs });
+
+			// A provider that does not advertise the capability keeps only the
+			// primary (index 0); one that advertises it receives the full set.
+			assert.deepStrictEqual({
+				single: single.lastConfig?.workingDirectories?.map(d => d.toString()),
+				multi: multi.lastConfig?.workingDirectories?.map(d => d.toString()),
+			}, {
+				single: [dirs[0].toString()],
+				multi: dirs.map(d => d.toString()),
+			});
+		});
+
 		test('honors requested session URI', async () => {
 			service.registerProvider(copilotAgent);
 
@@ -1409,7 +1446,7 @@ suite('AgentService (node dispatcher)', () => {
 			assert.deepStrictEqual({
 				modifiedTime: listed?.modifiedTime,
 				project: listed?.project && { uri: listed.project.uri.path, displayName: listed.project.displayName },
-				workingDirectory: listed?.workingDirectory?.path,
+				workingDirectory: listed?.workingDirectories?.[0]?.path,
 			}, {
 				modifiedTime: 2000,
 				project: { uri: '/project', displayName: 'project' },
@@ -1792,12 +1829,12 @@ suite('AgentService (node dispatcher)', () => {
 			const agent = new MockAgent('copilot');
 			disposables.add(toDisposable(() => agent.dispose()));
 			agent.resolvedWorkingDirectory = workingDirectory;
-			agent.sessionMetadataOverrides = { workingDirectory };
+			agent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 			localService.registerProvider(agent);
 
 			// A normal session passes an input workingDirectory, so it is not
 			// inferred workspace-less; `_meta` carries only the git overlay.
-			const session = await localService.createSession({ provider: 'copilot', workingDirectory });
+			const session = await localService.createSession({ provider: 'copilot', workingDirectories: workingDirectory ? [workingDirectory] : undefined });
 
 			// _attachGitState is fire-and-forget; drain microtasks until the
 			// git service's promise has resolved and setSessionMeta has run.
@@ -1839,7 +1876,7 @@ suite('AgentService (node dispatcher)', () => {
 			const agent = new MockAgent('copilot');
 			disposables.add(toDisposable(() => agent.dispose()));
 			agent.resolvedWorkingDirectory = workingDirectory;
-			agent.sessionMetadataOverrides = { workingDirectory };
+			agent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 			localService.registerProvider(agent);
 
 			const session = await localService.createSession({ provider: 'copilot' });
@@ -1922,7 +1959,7 @@ suite('AgentService (node dispatcher)', () => {
 			const agent = new MockAgent('copilot');
 			disposables.add(toDisposable(() => agent.dispose()));
 			agent.resolvedWorkingDirectory = workingDirectory;
-			agent.sessionMetadataOverrides = { workingDirectory };
+			agent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 			localService.registerProvider(agent);
 
 			const session = await localService.createSession({ provider: 'copilot' });
@@ -1953,7 +1990,7 @@ suite('AgentService (node dispatcher)', () => {
 			const agent = new MockAgent('copilot');
 			disposables.add(toDisposable(() => agent.dispose()));
 			agent.resolvedWorkingDirectory = workingDirectory;
-			agent.sessionMetadataOverrides = { workingDirectory };
+			agent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 			localService.registerProvider(agent);
 
 			const session = await localService.createSession({ provider: 'copilot' });
@@ -1987,7 +2024,7 @@ suite('AgentService (node dispatcher)', () => {
 			const agent = new MockAgent('copilot');
 			disposables.add(toDisposable(() => agent.dispose()));
 			agent.resolvedWorkingDirectory = workingDirectory;
-			agent.sessionMetadataOverrides = { workingDirectory };
+			agent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 			localService.registerProvider(agent);
 
 			const session = await localService.createSession({ provider: 'copilot' });
@@ -2032,7 +2069,7 @@ suite('AgentService (node dispatcher)', () => {
 				const agent = new MockAgent('copilot');
 				disposables.add(toDisposable(() => agent.dispose()));
 				agent.resolvedWorkingDirectory = workingDirectory;
-				agent.sessionMetadataOverrides = { workingDirectory };
+				agent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 				localService.registerProvider(agent);
 
 				// Seed a session and clear its _meta so subscribe must lazily
@@ -2328,6 +2365,64 @@ suite('AgentService (node dispatcher)', () => {
 			assert.ok(mdPart);
 			assert.strictEqual(mdPart.content, 'Hi there!');
 			assert.strictEqual(state!.turns[0].state, TurnState.Complete);
+		});
+
+		test('re-attaches persisted turn usage on restore', async () => {
+			// Providers don't durably record token/credit usage (the Copilot
+			// SDK's `assistant.usage` event is explicitly ephemeral), so without
+			// the host-side overlay a reloaded session comes back with no
+			// context-usage gauge and a session cost of 0.
+			const db = new TestSessionDatabase();
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, createSessionDataService(db), { _serviceBrand: undefined } as IProductService, createNoopGitService()));
+			localService.registerProvider(copilotAgent);
+			const { session } = await copilotAgent.createSession();
+			const sessionResource = (await copilotAgent.listSessions())[0].session;
+			copilotAgent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi there!', toolRequests: [] },
+			];
+			await db.setTurnUsage('msg-1', JSON.stringify({ inputTokens: 100, outputTokens: 20, model: 'gpt-5' }));
+
+			await localService.restoreSession(sessionResource);
+
+			assert.deepStrictEqual(
+				localService.stateManager.getSessionState(sessionResource.toString())?.turns.map(t => t.usage),
+				[{ inputTokens: 100, outputTokens: 20, model: 'gpt-5' }],
+			);
+		});
+
+		test('re-attaches usage over an Auto-model stub, preserving the routing metadata', async () => {
+			// A turn that ran on Copilot Auto is restored with a token-less stub
+			// (`{ model, _meta: { autoModeResolved } }`, see mapSessionEvents)
+			// because the routing decision IS persisted while the usage event is
+			// not. Treating that stub as "already has usage" would skip exactly
+			// the turns needing re-attachment — and Auto is the default model.
+			const db = new TestSessionDatabase();
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, createSessionDataService(db), { _serviceBrand: undefined } as IProductService, createNoopGitService()));
+			const autoModeResolved = { chosenModel: 'claude-opus-4.8', predictedLabel: 'needs_reasoning', confidence: 0.93 };
+			const agent = disposables.add(new MockAgent('copilot'));
+			agent.turnUsageOverride = { model: 'claude-opus-4.8', _meta: { autoModeResolved } };
+			localService.registerProvider(agent);
+			const { session } = await agent.createSession();
+			const sessionResource = (await agent.listSessions())[0].session;
+			agent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi there!', toolRequests: [] },
+			];
+			await db.setTurnUsage('msg-1', JSON.stringify({ inputTokens: 100, outputTokens: 20, model: 'claude-opus-4.8', _meta: { copilotUsage: { totalNanoAiu: 5_000_000_000 } } }));
+
+			await localService.restoreSession(sessionResource);
+
+			assert.deepStrictEqual(
+				localService.stateManager.getSessionState(sessionResource.toString())?.turns.map(t => t.usage),
+				[{
+					inputTokens: 100,
+					outputTokens: 20,
+					model: 'claude-opus-4.8',
+					// The stub's routing metadata survives alongside the persisted usage.
+					_meta: { autoModeResolved, copilotUsage: { totalNanoAiu: 5_000_000_000 } },
+				}],
+			);
 		});
 
 		test('interleaves persisted host-injected local turns after their anchor on restore', async () => {
@@ -4663,7 +4758,7 @@ suite('AgentService (node dispatcher)', () => {
 		test('addSubscriber for <session>/changeset/uncommitted triggers the first git diff refresh', async () => {
 			const workingDirectory = URI.from({ scheme: Schemas.inMemory, path: '/wd-refresh' });
 			copilotAgent.resolvedWorkingDirectory = workingDirectory;
-			copilotAgent.sessionMetadataOverrides = { workingDirectory };
+			copilotAgent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 
 			// Recording git service: a call to `computeSessionFileDiffs`
 			// with `baseBranch=undefined` is the signature of the uncommitted
@@ -4707,7 +4802,7 @@ suite('AgentService (node dispatcher)', () => {
 			// URI from any other client must also fire its own refresh.
 			const workingDirectory = URI.from({ scheme: Schemas.inMemory, path: '/wd-refresh-2' });
 			copilotAgent.resolvedWorkingDirectory = workingDirectory;
-			copilotAgent.sessionMetadataOverrides = { workingDirectory };
+			copilotAgent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 
 			const computeCalls: { wd: string; baseBranch: string | undefined }[] = [];
 			const gitService = createNoopGitService();
@@ -4748,7 +4843,7 @@ suite('AgentService (node dispatcher)', () => {
 			//    from disk, and MUST drain the pending refresh.
 			const workingDirectory = URI.from({ scheme: Schemas.inMemory, path: '/wd-restore-drain' });
 			copilotAgent.resolvedWorkingDirectory = workingDirectory;
-			copilotAgent.sessionMetadataOverrides = { workingDirectory };
+			copilotAgent.sessionMetadataOverrides = { workingDirectories: workingDirectory ? [workingDirectory] : undefined };
 
 			const computeCalls: { wd: string; baseBranch: string | undefined }[] = [];
 			const gitService = createNoopGitService();
@@ -5163,7 +5258,7 @@ suite('AgentService (node dispatcher)', () => {
 			service.registerProvider(copilotAgent);
 
 			const sourceDir = URI.file('/source/repo');
-			const session = await service.createSession({ provider: 'copilot', workingDirectory: sourceDir });
+			const session = await service.createSession({ provider: 'copilot', workingDirectories: [sourceDir] });
 
 			// The state manager should have the worktree path, not the source path
 			const state = service.stateManager.getSessionState(session.toString());
@@ -5176,7 +5271,7 @@ suite('AgentService (node dispatcher)', () => {
 			service.registerProvider(copilotAgent);
 
 			const sourceDir = URI.file('/source/repo');
-			const session = await service.createSession({ provider: 'copilot', workingDirectory: sourceDir });
+			const session = await service.createSession({ provider: 'copilot', workingDirectories: [sourceDir] });
 
 			const state = service.stateManager.getSessionState(session.toString());
 			assert.strictEqual(state?.workingDirectories?.[0], sourceDir.toString());
@@ -5185,7 +5280,7 @@ suite('AgentService (node dispatcher)', () => {
 		test('restoreSession uses agent working directory in state', async () => {
 			// Agent returns the worktree path through listSessions
 			const worktreeDir = URI.file('/source/repo.worktrees/agents-xyz');
-			copilotAgent.sessionMetadataOverrides = { workingDirectory: worktreeDir };
+			copilotAgent.sessionMetadataOverrides = { workingDirectories: worktreeDir ? [worktreeDir] : undefined };
 			service.registerProvider(copilotAgent);
 
 			const session = await service.createSession({ provider: 'copilot' });
@@ -5199,6 +5294,42 @@ suite('AgentService (node dispatcher)', () => {
 
 			const state = service.stateManager.getSessionState(session.toString());
 			assert.strictEqual(state?.workingDirectories?.[0], worktreeDir.toString());
+		});
+
+		test('_resolveWorkingDirectoryBeforeSend returns the full set (index 0 + tail), or undefined when unset', async () => {
+			const resolver = service as unknown as {
+				_resolveWorkingDirectoryBeforeSend: (p: { session: string; chat: string; turnId: string; prompt: string }) => Promise<readonly URI[] | undefined>;
+			};
+			const resolve = (resource: string) => resolver._resolveWorkingDirectoryBeforeSend({ session: resource, chat: `${resource}/chat`, turnId: 't', prompt: 'hi' });
+			const inject = (resource: string, dirs?: readonly URI[]) => service.stateManager.restoreSession({
+				resource,
+				provider: 'copilot',
+				title: 't',
+				status: SessionStatus.Idle,
+				createdAt: new Date().toISOString(),
+				modifiedAt: new Date().toISOString(),
+				project: undefined,
+				workingDirectories: dirs?.map(d => d.toString()),
+			}, []);
+
+			const a = URI.file('/roots/a');
+			const b = URI.file('/roots/b');
+			const c = URI.file('/roots/c');
+			const multi = URI.from({ scheme: 'copilot', path: '/multi' }).toString();
+			const single = URI.from({ scheme: 'copilot', path: '/single' }).toString();
+			const none = URI.from({ scheme: 'copilot', path: '/none' }).toString();
+			inject(multi, [a, b, c]);
+			inject(single, [a]);
+			inject(none, undefined);
+
+			// No worktree isolation is configured, so index 0 resolves to itself and
+			// the additional roots are preserved as-is; a session with no roots
+			// resolves to `undefined` (the agent runs in its own scratch dir).
+			const toStrings = (r: readonly URI[] | undefined) => r?.map(d => d.toString());
+			assert.deepStrictEqual(
+				[toStrings(await resolve(multi)), toStrings(await resolve(single)), toStrings(await resolve(none))],
+				[[a, b, c].map(d => d.toString()), [a.toString()], undefined],
+			);
 		});
 	});
 
@@ -5233,7 +5364,7 @@ suite('AgentService (node dispatcher)', () => {
 
 		const workspaceSession = await localService.createSession({
 			provider: provisionalAgent.id,
-			workingDirectory,
+			workingDirectories: workingDirectory ? [workingDirectory] : undefined,
 		});
 		const uncommittedUri = buildUncommittedChangesetUri(workspaceSession.toString());
 		localService.addSubscriber(URI.parse(uncommittedUri), 'client-1');
@@ -5364,14 +5495,14 @@ suite('AgentService (node dispatcher)', () => {
 			// "session created in-memory now, persisted on first sendMessage"
 			// flow that Copilot CLI / Claude actually use in production.
 			class ProvisionalMockAgent extends MockAgent {
-				private readonly _onDidMaterialize = new Emitter<{ session: URI; workingDirectory: URI | undefined; project: { uri: URI; displayName: string } | undefined }>();
+				private readonly _onDidMaterialize = new Emitter<{ session: URI; workingDirectories: readonly URI[] | undefined; project: { uri: URI; displayName: string } | undefined }>();
 				readonly onDidMaterializeSession = this._onDidMaterialize.event;
 				override async createSession(config?: import('../../common/agentService.js').IAgentCreateSessionConfig): Promise<import('../../common/agentService.js').IAgentCreateSessionResult> {
 					const result = await super.createSession(config);
 					return { ...result, provisional: true };
 				}
 				materialize(session: URI, workingDirectory?: URI): void {
-					this._onDidMaterialize.fire({ session, workingDirectory, project: undefined });
+					this._onDidMaterialize.fire({ session, workingDirectories: workingDirectory ? [workingDirectory] : undefined, project: undefined });
 				}
 			}
 
