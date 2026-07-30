@@ -22,6 +22,7 @@ export type LanguageModelToolInvokedEvent = LanguageModelToolTelemetryData & {
 	prepareTimeMs?: number;
 	invocationTimeMs?: number;
 	provider?: string;
+	toolCallId?: string;
 };
 
 export type LanguageModelToolInvokedClassification = LanguageModelToolTelemetryClassification & {
@@ -29,6 +30,7 @@ export type LanguageModelToolInvokedClassification = LanguageModelToolTelemetryC
 	prepareTimeMs?: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Time spent in prepareToolInvocation method in milliseconds.' };
 	invocationTimeMs?: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Time spent in tool invoke method in milliseconds.' };
 	provider?: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The agent host provider that invoked the tool (e.g. copilotcli, claude, codex), if applicable.' };
+	toolCallId?: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The agent host tool call identifier, if applicable.' };
 	owner: 'roblourens';
 	comment: 'Provides insight into the usage of language model tools.';
 };

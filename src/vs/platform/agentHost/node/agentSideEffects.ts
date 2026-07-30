@@ -715,6 +715,10 @@ export class AgentSideEffects extends Disposable {
 			this._toolCallTracker.toolCallStarted(agent.id, sessionKey, action.toolCallId, action.toolName, action.contributor);
 		}
 
+		if (action.type === ActionType.ChatToolCallReady) {
+			this._toolCallTracker.toolCallReady(sessionKey, action.toolCallId, action.toolInput);
+		}
+
 		const sessionUri = isAhpChatChannel(sessionKey) ? parseRequiredSessionUriFromChatUri(sessionKey) : sessionKey;
 
 		// Stamp the subagent chat URI onto the tool call as soon as toolKind

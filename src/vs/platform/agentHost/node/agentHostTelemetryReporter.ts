@@ -6,6 +6,7 @@
 import type { LanguageModelToolInvokedClassification, LanguageModelToolInvokedEvent } from '../../telemetry/common/languageModelToolTelemetry.js';
 import type { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { TelemetryTrustedValue } from '../../telemetry/common/telemetryUtils.js';
+import type { TodoStoreOperation, TodoStoreOperationClassification, TodoStoreOperationEvent, TodoStoreTarget } from '../../telemetry/common/todoStoreTelemetry.js';
 import { hash } from '../../../base/common/hash.js';
 import { AgentSession } from '../common/agentService.js';
 import type { ErrorInfo, MessageAttachment, SessionInputRequestKind, ToolDefinition } from '../common/state/protocol/state.js';
@@ -131,8 +132,17 @@ export interface IAgentHostToolInvokedReport {
 	session: string;
 	toolId: string;
 	toolSourceKind: string;
+	toolCallId: string;
 	result: ToolInvokedResult;
 	invocationTimeMs: number;
+}
+
+interface IAgentHostTodoStoreOperationReport {
+	provider: string;
+	session: string;
+	toolCallId: string;
+	operation: TodoStoreOperation;
+	target: TodoStoreTarget;
 }
 
 type AgentHostToolCallResponseType = 'success' | 'cancelled' | 'failed';
@@ -717,8 +727,21 @@ export class AgentHostTelemetryReporter {
 			toolId: report.toolId,
 			toolExtensionId: undefined,
 			toolSourceKind: report.toolSourceKind,
+			toolCallId: report.toolCallId,
 			invocationTimeMs: report.invocationTimeMs,
 			provider: report.provider,
+		});
+	}
+
+	todoStoreOperation(report: IAgentHostTodoStoreOperationReport): void {
+		const session = isAhpChatChannel(report.session) ? parseRequiredSessionUriFromChatUri(report.session) : report.session;
+		this._telemetryService.publicLog2<TodoStoreOperationEvent, TodoStoreOperationClassification>('todoStoreOperation', {
+			operation: report.operation,
+			target: report.target,
+			toolCallId: report.toolCallId,
+			provider: report.provider,
+			agentSessionId: AgentSession.id(session),
+			isSubagentSession: isSubagentChatUri(report.session) || isSubagentSession(session),
 		});
 	}
 
