@@ -126,6 +126,12 @@
 	background: var(--vscode-toolbar-hoverBackground);
 }
 
+/* Pressed state uses the dedicated toolbar active token so the chevron matches
+ * the workbench toolbar controls one step darker than hover. */
+.agent-sessions-workbench .part.editor .multiDiffEntry .collapse-button a:active {
+	background: var(--vscode-toolbar-activeBackground);
+}
+
 .agent-sessions-workbench .part.editor .multiDiffEntry .collapse-button a:focus:not(:focus-visible) {
 	outline: none;
 }
