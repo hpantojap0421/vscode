@@ -361,19 +361,23 @@ suite('CopilotSessionLauncher client identity', () => {
 
 			assert.deepStrictEqual({
 				createClientName: createConfigs[0].clientName,
+				createEnableSessionStore: createConfigs[0].enableSessionStore,
 				createPluginDirectories: createConfigs[0].pluginDirectories,
 				createSkillDirectories: createConfigs[0].skillDirectories,
 				createInstructionDirectories: createConfigs[0].instructionDirectories,
 				resumeClientName: resumeConfigs[0].clientName,
+				resumeEnableSessionStore: resumeConfigs[0].enableSessionStore,
 				resumePluginDirectories: resumeConfigs[0].pluginDirectories,
 				resumeSkillDirectories: resumeConfigs[0].skillDirectories,
 				resumeInstructionDirectories: resumeConfigs[0].instructionDirectories,
 			}, {
 				createClientName: 'vscode-agent-host',
+				createEnableSessionStore: true,
 				createPluginDirectories: [pluginDir.fsPath],
 				createSkillDirectories: [],
 				createInstructionDirectories: [URI.joinPath(pluginDir, 'rules').fsPath],
 				resumeClientName: 'vscode-agent-host',
+				resumeEnableSessionStore: true,
 				resumePluginDirectories: [pluginDir.fsPath],
 				resumeSkillDirectories: [],
 				resumeInstructionDirectories: [URI.joinPath(pluginDir, 'rules').fsPath],
