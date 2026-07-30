@@ -49,6 +49,26 @@
 	border-bottom-right-radius: var(--vscode-cornerRadius-medium);
 }
 
+/* The whole header row is clickable (it toggles collapse), so it carries the
+ * same interactive ramp as the collapse chevron and the workbench toolbar
+ * controls: the resting section-header tint, a hover overlay, then a
+ * one-step-darker pressed overlay. The overlays are the translucent toolbar
+ * tokens layered over the resting background (via a solid gradient) so the
+ * resting tint shows through and the darkening stays subtle. The `transparent`
+ * fallbacks neutralize the effect in high-contrast themes, where these tokens
+ * are intentionally null and differentiation comes from the contrast borders. */
+.agent-sessions-workbench .part.editor .multiDiffEntry .header:hover .header-content {
+	background:
+		linear-gradient(var(--vscode-toolbar-hoverBackground, transparent), var(--vscode-toolbar-hoverBackground, transparent)),
+		var(--vscode-sideBarSectionHeader-background);
+}
+
+.agent-sessions-workbench .part.editor .multiDiffEntry .header:active .header-content {
+	background:
+		linear-gradient(var(--vscode-toolbar-activeBackground, transparent), var(--vscode-toolbar-activeBackground, transparent)),
+		var(--vscode-sideBarSectionHeader-background);
+}
+
 .agent-sessions-workbench .part.editor .multiDiffEntry .header[aria-expanded="false"] + .editorParent {
 	border: none;
 }
