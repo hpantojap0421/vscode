@@ -183,11 +183,11 @@
  * active border in addition to the header background tint above. `:focus-within`
  * covers both mouse and keyboard focus, so it doubles as the keyboard focus
  * indicator for the role="button" header (which has `outline: none`). The
- * border stays outside the card seam: the header's bottom edge keeps the resting
- * border color, while the outer sides and bottom use the active border. High-
- * contrast themes swap in the contrast active border. */
+ * border stays outside the card seam: the header's bottom edge is transparent,
+ * while the outer sides and bottom use the active border. High-contrast themes
+ * swap in the contrast active border. */
 .agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content {
-	border-color: var(--vscode-focusBorder) var(--vscode-focusBorder) var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent)) var(--vscode-focusBorder);
+	border-color: var(--vscode-focusBorder) var(--vscode-focusBorder) transparent var(--vscode-focusBorder);
 }
 
 .agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent {
@@ -196,7 +196,7 @@
 
 .hc-black.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content,
 .hc-light.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content {
-	border-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent)) var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+	border-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)) transparent var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
 }
 
 .hc-black.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent,
