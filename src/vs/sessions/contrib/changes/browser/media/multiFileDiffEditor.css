@@ -49,6 +49,19 @@
 	border-bottom-right-radius: var(--vscode-cornerRadius-medium);
 }
 
+/* When the card is in focus (contains the active selection), tint the header
+ * with the focus-state background instead of changing its border. It's the
+ * translucent list-focus overlay layered over the resting section-header tint
+ * (same solid-gradient technique as hover/press), with a `transparent` fallback
+ * so themes that don't define a focus background — classic and high-contrast —
+ * keep the resting tint. Declared before the hover/press rules so those
+ * transient overlays still take over while the focused card is hovered or held. */
+.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content {
+	background:
+		linear-gradient(var(--vscode-list-focusBackground, transparent), var(--vscode-list-focusBackground, transparent)),
+		var(--vscode-sideBarSectionHeader-background);
+}
+
 /* The whole header row is clickable (it toggles collapse), so it carries the
  * same interactive ramp as the collapse chevron and the workbench toolbar
  * controls: the resting section-header tint, a hover overlay, then a
@@ -165,20 +178,14 @@
 	overflow: hidden;
 }
 
-/* Keep the active card quiet while preserving a clear keyboard focus indicator. */
-.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content,
-.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent {
-	border-color: color-mix(in srgb, var(--vscode-focusBorder) 40%, transparent);
-}
-
+/* The card keeps its default grey border in every mouse/active state; focus is
+ * signalled by the header background tint above, not a border color change.
+ * The one exception is the header's own keyboard focus: it's a role="button"
+ * with `outline: none`, so `:focus-visible` must paint a visible indicator for
+ * keyboard users (WCAG 2.4.7). This fires for keyboard focus only — never on
+ * mouse — so it doesn't reintroduce the active-card border on click. Uses the
+ * high-contrast active border when present, the focus border otherwise. */
 .agent-sessions-workbench .part.editor .multiDiffEntry .header:focus-visible .header-content {
-	border-color: var(--vscode-focusBorder);
-}
-
-.hc-black.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content,
-.hc-black.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent,
-.hc-light.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .header .header-content,
-.hc-light.agent-sessions-workbench .part.editor .multiDiffEntry:focus-within .editorParent {
 	border-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
 }
 
