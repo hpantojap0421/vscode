@@ -66,6 +66,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 
 interface IEditorInputLabel {
 	readonly editor: EditorInput;
+	pinned: boolean;
 
 	readonly name?: string;
 	description?: string;
@@ -647,7 +648,8 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 			labelA.description === labelB.description &&
 			labelA.forceDescription === labelB.forceDescription &&
 			labelA.title === labelB.title &&
-			labelA.ariaLabel === labelB.ariaLabel;
+			labelA.ariaLabel === labelB.ariaLabel &&
+			labelA.pinned === labelB.pinned;
 	}
 
 	beforeCloseEditor(editor: EditorInput): void {
@@ -734,7 +736,10 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 	}
 
 	pinEditor(editor: EditorInput): void {
-		this.withTab(editor, (editor, tabIndex, tabContainer, tabLabelWidget, tabLabel) => this.redrawTabLabel(editor, tabIndex, tabContainer, tabLabelWidget, tabLabel));
+		this.withTab(editor, (editor, tabIndex, tabContainer, tabLabelWidget, tabLabel) => {
+			this.redrawTabLabel(editor, tabIndex, tabContainer, tabLabelWidget, tabLabel);
+			this.tabLabels[tabIndex].pinned = this.tabsModel.isPinned(editor);
+		});
 	}
 
 	stickEditor(editor: EditorInput): void {
@@ -1471,6 +1476,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		this.tabsModel.getEditors(EditorsOrder.SEQUENTIAL).forEach((editor: EditorInput, tabIndex: number) => {
 			labels.push({
 				editor,
+				pinned: this.tabsModel.isPinned(editor),
 				name: editor.getName(),
 				description: editor.getDescription(verbosity),
 				forceDescription: editor.hasCapability(EditorInputCapabilities.ForceDescription),
