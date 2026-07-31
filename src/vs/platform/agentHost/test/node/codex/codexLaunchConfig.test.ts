@@ -5,58 +5,34 @@
 
 import * as assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { buildCodexLaunchConfig, buildCodexResumeParams, isCodexThreadProviderCompatible } from '../../../node/codex/codexLaunchConfig.js';
+import { buildCodexLaunchConfig, buildCodexResumeParams } from '../../../node/codex/codexLaunchConfig.js';
 
 suite('CodexLaunchConfig', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
-	test('copilot config injects proxy credentials and provider overrides', () => {
-		const config = buildCodexLaunchConfig('copilot', { PATH: '/bin', OPENAI_API_KEY: 'personal' }, { baseUrl: 'http://127.0.0.1:1234', nonce: 'nonce' }, ['--log-level=debug']);
+
+	test('adds the Copilot proxy without selecting it globally', () => {
+		const config = buildCodexLaunchConfig({ PATH: '/bin', OPENAI_API_KEY: 'personal' }, { baseUrl: 'http://127.0.0.1:1234', nonce: 'nonce' }, ['--log-level=debug']);
 		assert.deepStrictEqual(config.env, { PATH: '/bin', OPENAI_API_KEY: 'nonce', AI_AGENT: 'github_copilot_vscode_agent' });
-		assert.ok(config.args.includes('model_provider="vscode-proxy"'));
+		assert.ok(config.args.includes('model_providers.vscode-proxy.name="VS Code Proxy"'));
+		assert.ok(!config.args.some(argument => argument.startsWith('model_provider=')));
 		assert.ok(config.args.includes('features.image_generation=false'));
 		assert.ok(config.args.includes('shell_environment_policy.set.AI_AGENT="github_copilot_vscode_agent"'));
 		assert.strictEqual(config.args.at(-1), '--log-level=debug');
 	});
 
-	test('openai config preserves user credentials and omits proxy overrides', () => {
-		const config = buildCodexLaunchConfig('openai', { PATH: '/bin', OPENAI_API_KEY: 'personal', CODEX_HOME: '/codex' }, undefined, []);
-		assert.deepStrictEqual(config.env, { PATH: '/bin', OPENAI_API_KEY: 'personal', CODEX_HOME: '/codex', AI_AGENT: 'github_copilot_vscode_agent' });
-		assert.deepStrictEqual(config.args, [
-			'app-server',
-			'-c', 'shell_environment_policy.set.AI_AGENT="github_copilot_vscode_agent"',
-			'-c', 'features.tool_call_mcp_elicitation=false',
-		]);
-	});
-
-	test('identifies provider-compatible threads', () => {
-		assert.deepStrictEqual({
-			copilotProxy: isCodexThreadProviderCompatible('copilot', 'vscode-proxy'),
-			copilotOpenAI: isCodexThreadProviderCompatible('copilot', 'openai'),
-			openAIProxy: isCodexThreadProviderCompatible('openai', 'vscode-proxy'),
-			openAIDefault: isCodexThreadProviderCompatible('openai', 'openai'),
-			openAICustom: isCodexThreadProviderCompatible('openai', 'custom-provider'),
-		}, {
-			copilotProxy: true,
-			copilotOpenAI: false,
-			openAIProxy: false,
-			openAIDefault: true,
-			openAICustom: true,
-		});
-	});
-
-	test('resume explicitly binds the compatible provider', () => {
+	test('resume explicitly binds each session provider', () => {
 		assert.deepStrictEqual(buildCodexResumeParams('openai', 'thread-a', {}), {
 			threadId: 'thread-a',
 			modelProvider: 'openai',
 		});
-		assert.deepStrictEqual(buildCodexResumeParams('copilot', 'thread-b', { GitHub: { url: 'https://api.githubcopilot.com/mcp/' } }), {
+		assert.deepStrictEqual(buildCodexResumeParams('vscode-proxy', 'thread-b', { GitHub: { url: 'https://api.githubcopilot.com/mcp/' } }), {
 			threadId: 'thread-b',
 			modelProvider: 'vscode-proxy',
 			config: { mcp_servers: { GitHub: { url: 'https://api.githubcopilot.com/mcp/' } } },
 		});
-		assert.deepStrictEqual(buildCodexResumeParams('openai', 'thread-c', {}, ['/repo-a', '/repo-b']), {
+		assert.deepStrictEqual(buildCodexResumeParams('custom-provider', 'thread-c', {}, ['/repo-a', '/repo-b']), {
 			threadId: 'thread-c',
-			modelProvider: 'openai',
+			modelProvider: 'custom-provider',
 			cwd: '/repo-a',
 			runtimeWorkspaceRoots: ['/repo-a', '/repo-b'],
 		});

@@ -240,6 +240,60 @@
 	padding: 2px 0 6px 0;
 }
 
+.agent-sessions-workbench .sessions-account-titlebar-panel-provider-account {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 16px;
+	border-top: 1px solid var(--vscode-menu-separatorBackground);
+	border-bottom: 1px solid var(--vscode-menu-separatorBackground);
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-provider-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	font-size: 20px;
+	color: var(--vscode-foreground);
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-provider-details {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-provider-name {
+	font-size: var(--vscode-agents-fontSize-label1);
+	font-weight: 600;
+	line-height: 20px;
+	color: var(--vscode-foreground);
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-provider-description {
+	overflow: hidden;
+	font-size: var(--vscode-agents-fontSize-label2);
+	line-height: 18px;
+	color: var(--vscode-descriptionForeground);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-provider-actions .action-label {
+	width: 24px;
+	height: 24px;
+	border-radius: var(--vscode-cornerRadius-medium);
+}
+
+.agent-sessions-workbench .sessions-account-titlebar-panel-provider-actions .action-item:not(.disabled) .action-label:hover,
+.agent-sessions-workbench .sessions-account-titlebar-panel-provider-actions .action-item:not(.disabled) .action-label:focus-visible {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
 .agent-sessions-workbench .sessions-account-titlebar-panel-actions > .monaco-action-bar .actions-container {
 	align-items: stretch;
 }

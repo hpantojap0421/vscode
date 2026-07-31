@@ -23,7 +23,7 @@ import { $, append, disposableWindowInterval, getDomNodePagePosition } from '../
 import { mainWindow } from '../../../../base/browser/window.js';
 import { ActionBar, ActionsOrientation } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { BaseActionViewItem, IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
-import { IAction, Separator } from '../../../../base/common/actions.js';
+import { Action, IAction, Separator } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
@@ -40,6 +40,7 @@ import { IAuthenticationUsageService } from '../../../../workbench/services/auth
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 import { IChatDashboardService } from '../../../browser/chatDashboardService.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import { createCodexAccountMenuActions, ICodexAccountService } from '../../../../workbench/services/agentHost/browser/codexAccountService.js';
 
 // --- Account Menu Items --- //
 const AccountMenu = Menus.AccountMenu;
@@ -179,6 +180,7 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		@IHoverService private readonly hoverService: IHoverService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IChatEntitlementService private readonly chatEntitlementService: ChatEntitlementService,
+		@ICodexAccountService private readonly codexAccountService: ICodexAccountService,
 	) {
 		super(undefined, action, options);
 		this.lastState = getAccountTitleBarState({
@@ -431,6 +433,16 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		const rawActions: IAction[] = [];
 		fillInActionBarActions(menu.getActions(), rawActions);
 		menu.dispose();
+		const codexAccount = this.codexAccountService.account;
+		const codexAccountActions = codexAccount.status === 'signedIn' ? [] : createCodexAccountMenuActions(this.codexAccountService);
+		if (codexAccountActions.length) {
+			if (rawActions.length) {
+				rawActions.push(new Separator());
+			}
+			for (const action of codexAccountActions) {
+				rawActions.push(action instanceof Action ? panelStore.add(action) : action);
+			}
+		}
 		const partitioned = this.partitionMenuActions(rawActions);
 
 		// Header: account label + sign-out icon.
@@ -463,6 +475,32 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 		}
 		if (partitioned.signOut) {
 			headerActionBar.push(partitioned.signOut, { icon: true, label: false });
+		}
+
+		if (codexAccount.status === 'signedIn') {
+			const accountSection = append(panel, $('section.sessions-account-titlebar-panel-provider-account', {
+				'aria-label': localize('chatGPTAccountSectionLabel', "ChatGPT account")
+			}));
+			const accountIcon = append(accountSection, $('span.sessions-account-titlebar-panel-provider-icon'));
+			accountIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.openai));
+			const accountDetails = append(accountSection, $('.sessions-account-titlebar-panel-provider-details'));
+			const accountName = append(accountDetails, $('.sessions-account-titlebar-panel-provider-name'));
+			accountName.textContent = localize('chatGPTAccountName', "ChatGPT");
+			const accountDescription = append(accountDetails, $('.sessions-account-titlebar-panel-provider-description'));
+			accountDescription.textContent = [codexAccount.email, codexAccount.planType].filter(Boolean).join(' · ');
+			const accountActions = append(accountSection, $('.sessions-account-titlebar-panel-provider-actions'));
+			const accountActionBar = panelStore.add(new ActionBar(accountActions));
+			panelStore.add(accountActionBar.onWillRun(() => {
+				this.hoverService.hideHover(true);
+				this.clickPanelDisposable.clear();
+			}));
+			accountActionBar.push(panelStore.add(new Action(
+				'codex.signOutOfChatGPT',
+				localize('signOutOfChatGPT', "Sign Out"),
+				ThemeIcon.asClassName(Codicon.signOut),
+				true,
+				() => this.codexAccountService.signOut(),
+			)), { icon: true, label: false });
 		}
 
 		// Other panel actions (sign-in, etc.) — only render if there's at least one non-separator action.
