@@ -481,7 +481,8 @@ class TitleBarAccountWidget extends BaseActionViewItem {
 			const accountSection = append(panel, $('section.sessions-account-titlebar-panel-provider-account', {
 				'aria-label': localize('chatGPTAccountSectionLabel', "ChatGPT account")
 			}));
-			append(accountSection, $(`span.sessions-account-titlebar-panel-provider-icon.${ThemeIcon.asClassName(Codicon.openai)}`));
+			const accountIcon = append(accountSection, $('span.sessions-account-titlebar-panel-provider-icon'));
+			accountIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.openai));
 			const accountDetails = append(accountSection, $('.sessions-account-titlebar-panel-provider-details'));
 			const accountName = append(accountDetails, $('.sessions-account-titlebar-panel-provider-name'));
 			accountName.textContent = localize('chatGPTAccountName', "ChatGPT");
