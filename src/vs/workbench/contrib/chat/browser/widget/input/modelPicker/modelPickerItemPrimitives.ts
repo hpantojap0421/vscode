@@ -56,6 +56,9 @@ function getVendorDisplayName(languageModelsService: ILanguageModelsService, ven
 		// @vritant24: This is temporary until we we have 2 distinct vendors for Copilot CLI vs Copilot Chat.
 		return localize('chat.modelPicker.copilotGroup', "Copilot");
 	}
+	if (vendor === 'chatgpt') {
+		return localize('chat.modelPicker.chatGPTGroup', "ChatGPT");
+	}
 	const descriptor = languageModelsService.getVendors().find(candidate => candidate.vendor === vendor);
 	return descriptor?.displayName ?? vendor.charAt(0).toUpperCase() + vendor.slice(1);
 }
