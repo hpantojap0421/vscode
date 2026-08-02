@@ -16,7 +16,7 @@ import { TelemetryData } from '../../../platform/telemetry/common/telemetryData'
 import { Disposable } from '../../../util/vs/base/common/lifecycle';
 import { autorun } from '../../../util/vs/base/common/observableInternal';
 import { GHPR_EXTENSION_ID } from '../../chatSessions/vscode/chatSessionsUriHandler';
-import { isClientBYOKAllowed } from '../../byok/common/byokProvider';
+import { resolveClientBYOKAllowed } from '../../byok/vscode-node/byokPolicy';
 import { EXTENSION_ID } from '../../common/constants';
 
 const welcomeViewContextKeys = {
@@ -224,13 +224,7 @@ export class ContextKeysContribution extends Disposable {
 	}
 
 	private async _updateClientByokEnabledContext() {
-		const hasGitHubSession = !!this._authenticationService.anyGitHubSession;
-		try {
-			const copilotToken = await this._authenticationService.getCopilotToken();
-			commands.executeCommand('setContext', clientByokEnabledContextKey, isClientBYOKAllowed(hasGitHubSession, copilotToken));
-		} catch (e) {
-			commands.executeCommand('setContext', clientByokEnabledContextKey, isClientBYOKAllowed(hasGitHubSession, undefined));
-		}
+		commands.executeCommand('setContext', clientByokEnabledContextKey, await resolveClientBYOKAllowed(this._authenticationService));
 	}
 
 	private _updateShowLogViewContext() {
@@ -256,6 +250,7 @@ export class ContextKeysContribution extends Disposable {
 	private async _onAuthenticationChange() {
 		this._inspectContext();
 		this._updatePermissiveSessionContext();
+		this._updateClientByokEnabledContext();
 	}
 
 	/**
