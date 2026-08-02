@@ -995,6 +995,7 @@ export namespace ConfigKey {
 	/** Disable the semantic_search (codebase) tool. Enable to experiment with removing it. */
 	export const DisableSemanticSearchTool = defineSetting<boolean>('chat.semanticSearchTool.disabled', ConfigType.ExperimentBased, false);
 	export const EnableChatImageUpload = defineSetting<boolean>('chat.imageUpload.enabled', ConfigType.Simple, true);
+	export const ChatImageDetail = defineSetting<'high' | 'original'>('chat.imageDetail', ConfigType.Simple, 'high');
 	/** Enable Anthropic web search tool for BYOK Claude models */
 	export const AnthropicWebSearchToolEnabled = defineSetting<boolean>('chat.anthropic.tools.websearch.enabled', ConfigType.ExperimentBased, false);
 	/** Maximum number of web searches allowed per request */
