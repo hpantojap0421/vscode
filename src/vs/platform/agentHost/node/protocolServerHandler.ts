@@ -1042,6 +1042,23 @@ export class ProtocolServerHandler extends Disposable {
 		return false;
 	}
 
+	private _hasSubscriptionForSession(record: IClientRecord | undefined, session: string): boolean {
+		if (record?.state !== 'active') {
+			return false;
+		}
+		for (const connection of record.connections) {
+			for (const subscription of connection.subscriptions.values()) {
+				if (subscription.kind !== ChannelKind.State) {
+					continue;
+				}
+				if (subscription.uri === session || (isAhpChatChannel(subscription.uri) && parseRequiredSessionUriFromChatUri(subscription.uri) === session)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	/** Number of clients that currently have a live connection. */
 	private get _connectedClientCount(): number {
 		let count = 0;
@@ -1555,7 +1572,13 @@ export class ProtocolServerHandler extends Disposable {
 			}
 			this._agentService.unsubscribe(URI.parse(sub.uri), client.clientId);
 			if (isAhpChatChannel(sub.uri)) {
-				this._releaseActiveClientForSession(parseRequiredSessionUriFromChatUri(sub.uri), client.clientId, sub.uri);
+				const session = parseRequiredSessionUriFromChatUri(sub.uri);
+				if (!this._hasSubscriptionForSession(record, session)) {
+					const state = this._stateManager.getSessionState(session);
+					for (const chat of state?.chats ?? []) {
+						this._releaseActiveClientForSession(session, client.clientId, chat.resource);
+					}
+				}
 			} else {
 				const state = this._stateManager.getSessionState(sub.uri);
 				for (const chat of state?.chats ?? []) {
