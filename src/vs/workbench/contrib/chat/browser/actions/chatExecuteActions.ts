@@ -33,6 +33,7 @@ import { ILanguageModelToolsService } from '../../common/tools/languageModelTool
 import { isInClaudeAgentsFolder } from '../../common/promptSyntax/config/promptFileLocations.js';
 import { IChatSessionsService, localChatSessionType } from '../../common/chatSessionsService.js';
 import { type IChatAcceptInputOptions, IChatWidget, IChatWidgetService } from '../chat.js';
+import { ChatDynamicVariableModel } from '../attachments/chatDynamicVariables.js';
 import { getAgentSessionProvider, AgentSessionProviders, AgentSessionTarget } from '../agentSessions/agentSessions.js';
 import { getEditingSessionContext } from '../chatEditing/chatEditingActions.js';
 import { ctxHasEditorModification, ctxHasRequestInProgress, ctxIsGlobalEditingSession } from '../chatEditing/chatEditingEditorContextKeys.js';
@@ -909,6 +910,11 @@ class SendToNewChatAction extends Action2 {
 		}
 
 		const inputBeforeClear = widget.getInput();
+		// Capture attachments and dynamic variable references before clearing so that
+		// references like #changes, #file:... are preserved when sending to a new chat.
+		const attachmentsBeforeClear = [...widget.attachmentModel.attachments];
+		const dynamicVariableModel = widget.getContrib<ChatDynamicVariableModel>(ChatDynamicVariableModel.ID);
+		const dynamicVariablesBeforeClear = dynamicVariableModel?.variables.slice() ?? [];
 
 		// Cancel any in-progress request before clearing
 		if (widget.viewModel) {
@@ -926,7 +932,20 @@ class SendToNewChatAction extends Action2 {
 
 		await instantiationService.invokeFunction(clearChatSessionPreservingType, widget, undefined);
 
-		widget.acceptInput(inputBeforeClear, { storeToHistory: true });
+		// Restore the input text, attachments, and dynamic variable decorations in the
+		// fresh session so that chat variables (e.g. #changes) survive the transition.
+		widget.setInput(inputBeforeClear);
+		if (attachmentsBeforeClear.length > 0) {
+			widget.attachmentModel.addContext(...attachmentsBeforeClear);
+		}
+		const restoredDynamicVariableModel = widget.getContrib<ChatDynamicVariableModel>(ChatDynamicVariableModel.ID);
+		if (restoredDynamicVariableModel) {
+			for (const variable of dynamicVariablesBeforeClear) {
+				restoredDynamicVariableModel.addReference(variable);
+			}
+		}
+
+		widget.acceptInput(undefined, { storeToHistory: true });
 	}
 }
 
