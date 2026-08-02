@@ -1892,6 +1892,7 @@ export interface IChatSendRequestOptions {
 		modeKind: ChatModeKind;
 		enabledTools?: UserSelectedTools;
 		enabledSubAgents?: readonly string[];
+		enabledSkills?: readonly string[];
 	};
 }
 
