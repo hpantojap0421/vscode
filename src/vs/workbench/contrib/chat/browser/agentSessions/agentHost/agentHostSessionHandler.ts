@@ -6,7 +6,7 @@
 import { Delayer, disposableTimeout, raceCancellation } from '../../../../../../base/common/async.js';
 import { encodeBase64, VSBuffer } from '../../../../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
-import { getErrorCode, isCancellationError } from '../../../../../../base/common/errors.js';
+import { CancellationError, getErrorCode, isCancellationError } from '../../../../../../base/common/errors.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { getChatErrorDetailsFromMeta, getCopilotPlanFromEntitlement, IChatErrorContext } from '../../../common/chatErrorMessages.js';
@@ -1064,6 +1064,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					// separate chat channel, so reading them before the chat
 					// subscription lands would yield an empty history.
 					await this._whenSubscriptionHydrated(sub, token);
+					if (token.isCancellationRequested) {
+						throw new CancellationError();
+					}
 					// A failed subscription surfaces as an `Error` value; rethrow it
 					// so the real reason (e.g. the working directory no longer
 					// exists) is logged and rendered instead of a generic message.
@@ -1160,6 +1163,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 						}
 					}
 				} catch (err) {
+					if (isCancellationError(err)) {
+						throw err;
+					}
 					this._logService.warn(`[AgentHost] Failed to subscribe to existing session: ${resolvedSession.toString()}`, err);
 					// Surface a hard load failure as a visible chat error instead of
 					// a silently empty session. Only when nothing else rendered, so a
