@@ -204,27 +204,13 @@ function getErrorMessage(err: unknown): string {
 	return String(err);
 }
 
-/**
- * Decide whether a Copilot SDK `resumeSession` failure should fall back to
- * `createSession({ sessionId })`. We want to preserve the original
- * recovery for empty / truncated sessions (e.g. after the user invoked
- * "Start Over", which calls `truncateSession` and leaves the on-disk
- * session with zero events - the SDK then refuses to resume it), but we
- * must NOT silently swallow corruption / schema-validation / parse
- * failures: those should surface so the user sees the real error and the
- * original session contents are not masked by a fresh empty session.
- *
- * Heuristic: any `-32603` Internal Error is treated as the empty-session
- * case UNLESS the message clearly indicates corruption, schema
- * validation, parse failure, or malformed input.
- */
-function shouldCreateEmptySessionAfterResumeError(err: unknown): boolean {
+function shouldCreateSessionAfterResumeError(err: unknown): boolean {
 	if (getCopilotSdkErrorCode(err) !== -32603) {
 		return false;
 	}
-
 	const message = getErrorMessage(err);
-	return !/\b(corrupt|corrupted|invalid|validation|schema|must be|parse|malformed|unexpected token)\b/i.test(message);
+	return /'session\.getMessages' returned no events for session\b/i.test(message)
+		|| /\bSession not found: [^\s]+$/i.test(message);
 }
 
 function isCustomAgentNotFoundError(err: unknown): boolean {
@@ -424,7 +410,7 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 			// The SDK fails to resume sessions that have no messages.
 			// Fall back to creating a new session with the same ID,
 			// seeding model & working directory from stored metadata.
-			if (!shouldCreateEmptySessionAfterResumeError(resumeError)) {
+			if (!shouldCreateSessionAfterResumeError(resumeError)) {
 				throw resumeError;
 			}
 
