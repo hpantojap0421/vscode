@@ -135,7 +135,7 @@ Use the affected provider command with `--grep "<exact test title>"` and tempora
     --grep "accepted steering followed by abort"
   ```
 
-## Test-prompt limitation
+## Test-design limitations
 
 ### Claude plan-mode prompt
 
@@ -146,6 +146,10 @@ Use the affected provider command with `--grep "<exact test title>"` and tempora
 - Gate: `supportsPlanMode: false`.
 - Next step: use a provider-neutral or Claude-specific prompt without weakening the plan-mode assertions.
 - Reproduce: temporarily enable `supportsPlanMode` and record the exact title.
+
+### Cumulative state assertions
+
+A test that checks only its final dispatch can miss an earlier action that was echoed but never applied. When a scenario builds state across several actions, include an assertion over the accumulated result rather than only the last write.
 
 ## Expected capability skips
 
