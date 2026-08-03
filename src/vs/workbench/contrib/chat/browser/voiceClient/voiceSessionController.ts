@@ -43,6 +43,7 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { INotificationService, Severity } from '../../../../../platform/notification/common/notification.js';
+import { CHAT_INPUT_WINDOW_ACCEPT_VOICE_COMMAND_ID, CHAT_INPUT_WINDOW_SET_VOICE_TARGET_COMMAND_ID } from '../../common/chatInputWindow.js';
 import { IPromptsService } from '../../common/promptSyntax/service/promptsService.js';
 import {
 	VoiceFirstConnectClassification, VoiceFirstConnectEvent,
@@ -251,7 +252,7 @@ export interface IVoiceSessionController {
 	 * Set the target session for transcription. When set, transcriptions are
 	 * sent to this session instead of the currently active one.
 	 */
-	setTargetSession(resource: URI | undefined): void;
+	setTargetSession(resource: URI | undefined, omniRoute?: 'existing_session' | 'new_session'): void;
 
 	/**
 	 * Create a new chat session and set it as the target for transcription.
@@ -332,6 +333,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 	private readonly _targetSession = observableValue<URI | undefined>(this, undefined);
 	readonly targetSession: IObservable<URI | undefined> = this._targetSession;
+	private _targetOmniRoute: 'existing_session' | 'new_session' | undefined;
 
 	// --- Internal state ---
 	private _pttHeld = false;
@@ -771,6 +773,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		@IPromptsService private readonly promptsService: IPromptsService,
 	) {
 		super();
+
+		this._register(CommandsRegistry.registerCommand(CHAT_INPUT_WINDOW_SET_VOICE_TARGET_COMMAND_ID, (_accessor, resource: string | undefined, kind?: 'existing_session' | 'new_session') => {
+			if (this._isConnected.get() || this._isConnecting.get()) {
+				this.setTargetSession(resource ? URI.parse(resource) : undefined, kind);
+			}
+		}));
 
 		// Track the focused chat session so we can defer voice responses that
 		// arrive for a session the user isn't currently looking at, and flush
@@ -2078,6 +2086,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// Terminal disconnect: drop the routing target and pending-confirmation
 		// snapshot (and suppress the tracker) so a later reconnect can't re-pin
 		// voice to the old session or repopulate its stale confirmation.
+		this._targetOmniRoute = undefined;
 		this._targetSession.set(undefined, undefined);
 		this._suppressPendingConfirmationsUntilConnect();
 		this._pendingToolConfirmations.set([], undefined);
@@ -2217,6 +2226,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// Terminal disconnect (no reconnect): drop the routing target and
 		// pending-confirmation snapshot, and suppress the tracker so connect()
 		// isn't re-pinned to this evicted session (see disconnect()).
+		this._targetOmniRoute = undefined;
 		this._targetSession.set(undefined, undefined);
 		this._suppressPendingConfirmationsUntilConnect();
 		this._pendingToolConfirmations.set([], undefined);
@@ -2739,7 +2749,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._userCancelledSessions.set(sessionId, expiry);
 	}
 
-	setTargetSession(resource: URI | undefined): void {
+	setTargetSession(resource: URI | undefined, omniRoute?: 'existing_session' | 'new_session'): void {
+		this._targetOmniRoute = resource ? omniRoute : undefined;
 		this._targetSession.set(resource, undefined);
 	}
 
@@ -2747,6 +2758,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const ref = this.chatService.startNewLocalSession(ChatAgentLocation.Chat);
 		const resource = ref.object.sessionResource;
 		ref.dispose();
+		this._targetOmniRoute = undefined;
 		this._targetSession.set(resource, undefined);
 		// Try to switch the view to the new session (works if chat pane is open)
 		this.commandService.executeCommand('_chat.voice.switchToSession', resource.toString()).catch(() => { /* pane may not exist */ });
@@ -3151,9 +3163,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private async _sendTranscriptionToChat(text: string): Promise<void> {
 		// A focus-change submit pins routing to the session the user was
-		// dictating into; it takes priority over the user-picked target and the
-		// currently focused session so their words land where they were aimed.
-		const target = this._consumePinnedSubmitSession() ?? this._targetSession.get();
+		// dictating into, so it takes priority over whichever surface has focus
+		// by the time the backend finalizes the turn.
+		const pinnedTarget = this._consumePinnedSubmitSession();
+		const acceptedByOmni = !pinnedTarget && await this.commandService.executeCommand<boolean>(CHAT_INPUT_WINDOW_ACCEPT_VOICE_COMMAND_ID, text).catch(() => false);
+		if (acceptedByOmni) {
+			return;
+		}
+
+		const target = pinnedTarget ?? this._targetSession.get();
 		if (target) {
 			// Check if target is the currently visible session
 			const currentSession = await this.commandService.executeCommand<string | undefined>('_chat.voice.getCurrentSession').catch(() => undefined);
@@ -5798,6 +5816,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				id: s.resource.toString(),
 				...(s.label ? { label: s.label } : {}),
 				is_active: isActive,
+				...(isActive && s.resource.toString() === this._targetSession.get()?.toString() && this._targetOmniRoute ? { omni_route: this._targetOmniRoute } : {}),
 				agent_state: scoped.state,
 				...(!scoped.hideConfirmationDetail && stateInfo.detail ? { agent_state_detail: stateInfo.detail } : {}),
 				...(!scoped.hideConfirmationDetail && stateInfo.confirmation_type ? { confirmation_type: stateInfo.confirmation_type } : {}),
@@ -5826,6 +5845,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				id: key,
 				...(chatModel.title ? { label: chatModel.title } : {}),
 				is_active: isActive,
+				...(isActive && key === this._targetSession.get()?.toString() && this._targetOmniRoute ? { omni_route: this._targetOmniRoute } : {}),
 				agent_state: scoped.state,
 				...(!scoped.hideConfirmationDetail && stateInfo.detail ? { agent_state_detail: stateInfo.detail } : {}),
 				...(!scoped.hideConfirmationDetail && stateInfo.confirmation_type ? { confirmation_type: stateInfo.confirmation_type } : {}),

@@ -1234,6 +1234,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	}
 
 	private renderGettingStartedTipIfNeeded(): void {
+		if (this.viewOptions.renderGettingStartedTip === false) {
+			this.clearGettingStartedTip();
+			return;
+		}
 		if (!this.inputPart || !this.viewModel) {
 			return;
 		}
@@ -2100,6 +2104,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			workspacePickerDelegate: this.viewOptions.workspacePickerDelegate,
 			isSessionsWindow: this.viewOptions.isSessionsWindow,
 			onDidChangeInputOnboardingVisible: visible => this.setInputOnboardingVisible(visible),
+			onDidChangeModelPickerVisibility: this.viewOptions.onDidChangeModelPickerVisibility,
+			inputPickerPosition: this.viewOptions.inputPickerPosition,
 		};
 
 		if (this.viewModel?.editing) {
@@ -2763,7 +2769,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		// Check if a custom submit handler wants to handle this submission
 		if (this.viewOptions.submitHandler) {
 			const inputValue = !query ? this.getInput() : query.query;
-			const handled = await this.viewOptions.submitHandler(inputValue, this.input.currentModeKind);
+			const attachedContext = this.input.getAttachedContext().asArray();
+			const handled = await this.viewOptions.submitHandler(inputValue, this.input.currentModeKind, attachedContext);
 			if (handled) {
 				return;
 			}

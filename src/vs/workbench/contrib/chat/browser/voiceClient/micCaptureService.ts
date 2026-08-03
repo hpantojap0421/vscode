@@ -14,8 +14,13 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { localize } from '../../../../../nls.js';
 import { AgentsVoiceStorageKeys } from '../../../../contrib/agentsVoice/common/agentsVoice.js';
 import { createPcmCaptureNode } from '../pcmCaptureWorklet.js';
+import { mainWindow } from '../../../../../base/browser/window.js';
 
 export const IMicCaptureService = createDecorator<IMicCaptureService>('micCaptureService');
+
+export function getMediaCaptureWindow(targetWindow: Window & typeof globalThis): Window & typeof globalThis {
+	return targetWindow === mainWindow ? targetWindow : mainWindow;
+}
 
 /** Number of samples buffered per 32 ms voice capture chunk at 16 kHz, matching one Silero VAD frame. */
 export const MIC_CAPTURE_CHUNK_SIZE = 512;
@@ -242,7 +247,7 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 	}
 
 	prepare(window: Window & typeof globalThis): void {
-		this._window = window;
+		this._window = getMediaCaptureWindow(window);
 	}
 
 	async pttDown(turnId: string, passive: boolean = false): Promise<void> {
@@ -372,12 +377,13 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 	}
 
 	async startCapture(window: Window & typeof globalThis): Promise<void> {
-		this._window = window;
+		const captureWindow = getMediaCaptureWindow(window);
+		this._window = captureWindow;
 		if (this._isCapturing) { return; }
 		if (this._capturePromise) {
 			return this._capturePromise;
 		}
-		const capturePromise = this._startCapture(window);
+		const capturePromise = this._startCapture(captureWindow);
 		this._capturePromise = capturePromise;
 		try {
 			await capturePromise;
