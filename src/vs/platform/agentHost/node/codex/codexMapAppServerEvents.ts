@@ -84,6 +84,14 @@ export interface ICodexSessionMapState {
 	 */
 	readonly declinedToolCalls: Set<string>;
 	/**
+	 * Assistant response actions received while a tool call is still open. Codex
+	 * can publish the following response item before the preceding tool item
+	 * completion notification, especially when replay returns the next model
+	 * response immediately. Keep the AHP lifecycle ordered by releasing these
+	 * actions only after every preceding tool call has completed.
+	 */
+	readonly deferredResponseActions: (SessionAction | ChatAction)[];
+	/**
 	 * A `commandExecution` that completed successfully with NO output is
 	 * potentially a sandbox pre-flight. When Codex runs a network (or otherwise
 	 * escalated) command under `on-request` + `workspace-write` it first attempts
@@ -135,6 +143,7 @@ export function createCodexSessionMapState(serverToolNames: ReadonlySet<string> 
 		serverToolNames,
 		mcpCustomizationIds: new Map(),
 		declinedToolCalls: new Set(),
+		deferredResponseActions: [],
 		pendingPreflight: undefined,
 		agentMessagePartCount: 0,
 	};
@@ -152,6 +161,7 @@ export function resetCodexTurnMapState(state: ICodexSessionMapState): void {
 	state.itemToToolCall.clear();
 	state.itemToReasoningPartId.clear();
 	state.declinedToolCalls.clear();
+	state.deferredResponseActions.length = 0;
 	state.pendingPreflight = undefined;
 	state.agentMessagePartCount = 0;
 }
@@ -168,6 +178,25 @@ function flushPendingPreflight(state: ICodexSessionMapState): (SessionAction | C
 	}
 	state.pendingPreflight = undefined;
 	return pending.completion;
+}
+
+function deferResponseWhileToolCallIsOpen(state: ICodexSessionMapState, actions: (SessionAction | ChatAction)[]): (SessionAction | ChatAction)[] {
+	if (!hasOpenCommandExecution(state) && !state.pendingPreflight) {
+		return actions;
+	}
+	state.deferredResponseActions.push(...actions);
+	return [];
+}
+
+function flushDeferredResponseActions(state: ICodexSessionMapState): (SessionAction | ChatAction)[] {
+	if (hasOpenCommandExecution(state) || state.pendingPreflight || state.deferredResponseActions.length === 0) {
+		return [];
+	}
+	return state.deferredResponseActions.splice(0);
+}
+
+function hasOpenCommandExecution(state: ICodexSessionMapState): boolean {
+	return [...state.itemToToolCall.values()].some(entry => entry.toolName === 'shell');
 }
 
 /**
@@ -364,7 +393,7 @@ export function mapReasoningSummaryPartAdded(
 	state: ICodexSessionMapState,
 	params: ReasoningSummaryPartAddedNotification,
 ): (SessionAction | ChatAction)[] {
-	return ensureReasoningPart(state, params.turnId, reasoningKey(params.itemId, 'summary', params.summaryIndex)).actions;
+	return deferResponseWhileToolCallIsOpen(state, ensureReasoningPart(state, params.turnId, reasoningKey(params.itemId, 'summary', params.summaryIndex)).actions);
 }
 
 export function mapReasoningSummaryTextDelta(
@@ -372,10 +401,10 @@ export function mapReasoningSummaryTextDelta(
 	params: ReasoningSummaryTextDeltaNotification,
 ): (SessionAction | ChatAction)[] {
 	const ensured = ensureReasoningPart(state, params.turnId, reasoningKey(params.itemId, 'summary', params.summaryIndex));
-	return [
+	return deferResponseWhileToolCallIsOpen(state, [
 		...ensured.actions,
 		{ type: ActionType.ChatReasoning, turnId: params.turnId, partId: ensured.partId, content: params.delta },
-	];
+	]);
 }
 
 export function mapReasoningTextDelta(
@@ -383,10 +412,10 @@ export function mapReasoningTextDelta(
 	params: ReasoningTextDeltaNotification,
 ): (SessionAction | ChatAction)[] {
 	const ensured = ensureReasoningPart(state, params.turnId, reasoningKey(params.itemId, 'text', params.contentIndex));
-	return [
+	return deferResponseWhileToolCallIsOpen(state, [
 		...ensured.actions,
 		{ type: ActionType.ChatReasoning, turnId: params.turnId, partId: ensured.partId, content: params.delta },
-	];
+	]);
 }
 
 export function clearReasoningForItem(state: ICodexSessionMapState, itemId: string): void {
@@ -448,8 +477,12 @@ export function mapItemStarted(
 	// Any other item supersedes a deferred pre-flight: finalize it first so a
 	// genuinely output-less command still renders promptly as a single box.
 	const flushed = flushPendingPreflight(state);
+	const deferredResponseActions = flushDeferredResponseActions(state);
 	const body = mapItemStartedBody(state, params);
-	return flushed.length === 0 ? body : [...flushed, ...body];
+	const orderedBody = params.item.type === 'agentMessage'
+		? deferResponseWhileToolCallIsOpen(state, body)
+		: body;
+	return [...flushed, ...deferredResponseActions, ...orderedBody];
 }
 
 function mapItemStartedBody(
@@ -821,14 +854,14 @@ export function mapAgentMessageDelta(
 		// when `item/completed` arrives with the full `text` field.
 		return [];
 	}
-	return [
+	return deferResponseWhileToolCallIsOpen(state, [
 		{
 			type: ActionType.ChatDelta,
 			turnId: params.turnId,
 			partId,
 			content: params.delta,
 		},
-	];
+	]);
 }
 
 /**
@@ -901,9 +934,9 @@ export function mapItemCompleted(
 		if (success && !output && !declined) {
 			const flushed = flushPendingPreflight(state);
 			state.pendingPreflight = { toolCallId: entry.toolCallId, turnId: entry.turnId, command, completion };
-			return flushed;
+			return [...flushed, ...flushDeferredResponseActions(state)];
 		}
-		return [...flushPendingPreflight(state), ...completion];
+		return [...flushPendingPreflight(state), ...completion, ...flushDeferredResponseActions(state)];
 	}
 	if (params.item.type === 'webSearch') {
 		const query = describeWebSearch(params.item.query, params.item.action);
@@ -1000,6 +1033,20 @@ export function mapTurnCompleted(
 	state.currentTurnId = undefined;
 	state.itemToPartId.clear();
 	state.itemToReasoningPartId.clear();
+	// When a full turn item page is available (for example during replay), use
+	// it to reconcile tracked tools before handling genuinely unresolved calls.
+	// Live notifications normally use `itemsView: 'notLoaded'` and empty items.
+	const recoveredToolCallActions: (SessionAction | ChatAction)[] = [];
+	for (const item of params.turn.items) {
+		if (item.type === 'commandExecution' && (item.exitCode !== null || item.status !== 'completed') && state.itemToToolCall.has(item.id)) {
+			recoveredToolCallActions.push(...mapItemCompleted(state, {
+				threadId: params.threadId,
+				turnId: params.turn.id,
+				item,
+				completedAtMs: typeof params.turn.completedAt === 'number' ? params.turn.completedAt * 1000 : 0,
+			}));
+		}
+	}
 	// Finalize any command whose completion was deferred to coalesce a possible
 	// sandbox pre-flight (see ICodexSessionMapState.pendingPreflight) — it was
 	// never reused, so it is a genuine output-less command and must complete.
@@ -1026,11 +1073,14 @@ export function mapTurnCompleted(
 			error: { message: status === 'interrupted' ? 'Turn interrupted before the tool completed' : 'Turn completed before the tool reported completion' },
 		},
 	}));
+	const deferredResponseActions = flushDeferredResponseActions(state);
 	if (status === 'failed' && params.turn.error) {
 		const errMessage = params.turn.error.message ?? 'Codex turn failed';
 		return [
+			...recoveredToolCallActions,
 			...preflightFlush,
 			...orphanedToolCallActions,
+			...deferredResponseActions,
 			{
 				type: ActionType.ChatError,
 				turnId,
@@ -1048,9 +1098,9 @@ export function mapTurnCompleted(
 		];
 	}
 	if (status === 'interrupted') {
-		return [...preflightFlush, ...orphanedToolCallActions, { type: ActionType.ChatTurnCancelled, turnId, duration }];
+		return [...recoveredToolCallActions, ...preflightFlush, ...orphanedToolCallActions, ...deferredResponseActions, { type: ActionType.ChatTurnCancelled, turnId, duration }];
 	}
-	return [...preflightFlush, ...orphanedToolCallActions, { type: ActionType.ChatTurnComplete, turnId, duration }];
+	return [...recoveredToolCallActions, ...preflightFlush, ...orphanedToolCallActions, ...deferredResponseActions, { type: ActionType.ChatTurnComplete, turnId, duration }];
 }
 
 /**
