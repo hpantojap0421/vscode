@@ -79,6 +79,14 @@ export interface BYOKModelCapabilities {
 	 * If unset the format is inferred from the API path the endpoint uses.
 	 */
 	reasoningEffortFormat?: 'chat-completions' | 'responses' | 'messages';
+	description?: string;
+	icon?: string;
+	maxTokens?: number;
+	credits?: {
+		input?: number;
+		output?: number;
+		cacheRead?: number;
+	};
 }
 
 export interface BYOKModelRegistry {
@@ -121,8 +129,11 @@ export function isNoAuthConfig(config: BYOKModelConfig): config is BYOKNoAuthMod
  * `maxOutputTokens > contextWindow`, or a `maxInputTokens` supplied alongside a smaller
  * `contextWindow` overflowing the window.
  */
-export function resolveModelTokenLimits(capabilities: Pick<BYOKModelCapabilities, 'maxInputTokens' | 'maxOutputTokens' | 'contextWindow'>): { contextWindow: number; maxInputTokens: number; maxOutputTokens: number } {
-	const contextWindow = capabilities.contextWindow ?? ((capabilities.maxInputTokens ?? 0) + capabilities.maxOutputTokens);
+export function resolveModelTokenLimits(capabilities: Pick<BYOKModelCapabilities, 'maxInputTokens' | 'maxOutputTokens' | 'contextWindow' | 'maxTokens'>): { contextWindow: number; maxInputTokens: number; maxOutputTokens: number } {
+	let contextWindow = capabilities.contextWindow ?? ((capabilities.maxInputTokens ?? 0) + capabilities.maxOutputTokens);
+	if (capabilities.maxTokens !== undefined) {
+		contextWindow = Math.min(contextWindow, capabilities.maxTokens);
+	}
 	// The output budget can never exceed the full window.
 	const maxOutputTokens = Math.min(capabilities.maxOutputTokens, contextWindow);
 	// The prompt budget is whatever remains after the output reservation; an explicitly
@@ -176,6 +187,18 @@ export function resolveModelInfo(modelId: string, providerName: string, knownMod
 	if (knownModelInfo?.requestHeaders && Object.keys(knownModelInfo.requestHeaders).length > 0) {
 		modelInfo.requestHeaders = { ...knownModelInfo.requestHeaders };
 	}
+	if (knownModelInfo?.credits) {
+		modelInfo.billing = {
+			token_prices: {
+				batch_size: 1000000,
+				default: {
+					input_price: knownModelInfo.credits.input ?? 0,
+					output_price: knownModelInfo.credits.output ?? 0,
+					cache_price: knownModelInfo.credits.cacheRead ?? 0,
+				}
+			}
+		};
+	}
 	return modelInfo;
 }
 
@@ -200,15 +223,18 @@ export function byokKnownModelToAPIInfo(providerName: string, id: string, capabi
 		// vendor (e.g. multiple Ollama servers) are distinguishable in
 		// the model picker.
 		family: id,
-		tooltip: `${capabilities.name} is contributed via the ${providerName} provider.`,
+		tooltip: capabilities.description || `${capabilities.name} is contributed via the ${providerName} provider.`,
 		multiplierNumeric: undefined,
 		isUserSelectable: true,
+		inputCost: capabilities.credits?.input,
+		outputCost: capabilities.credits?.output,
+		cacheCost: capabilities.credits?.cacheRead,
 		capabilities: {
 			toolCalling: capabilities.toolCalling,
 			imageInput: capabilities.vision,
 			editTools: capabilities.editTools,
 		},
-	};
+	} as LanguageModelChatInformation;
 }
 
 /**
