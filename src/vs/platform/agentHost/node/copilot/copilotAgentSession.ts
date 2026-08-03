@@ -45,7 +45,7 @@ import { isAgentFeedbackAnnotationsAttachment, renderAgentFeedbackAnnotationsAtt
 import { ISessionDatabase, ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../../common/sessionDataService.js';
 import { MessageAttachmentKind, ToolCallContributorKind, type FileEdit, type MessageAttachment, type ToolCallContributor } from '../../common/state/protocol/state.js';
 import { ActionType, isChatAction, type ChatAction, type SessionAction } from '../../common/state/sessionActions.js';
-import { MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallStatus, ToolResultContentType, buildSubagentSessionUri, getToolSubagentContent, isDefaultChatUri, isSubagentSession, readSessionPromptCacheState, withSessionPromptCacheState, type Message, type PendingMessage, type ChatInputAnswer, type ChatInputOption, type ChatInputQuestion, type ChatInputRequest, type ToolCallResult, type ToolResultContent, type ToolResultTerminalContent, type Turn, type UsageInfo, type UsageInfoMeta, type IContextAttributionData, type ISessionPromptCacheState } from '../../common/state/sessionState.js';
+import { MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallStatus, ToolResultContentType, buildSubagentSessionUri, getToolSubagentContent, isDefaultChatUri, isSubagentSession, readSessionPromptCacheState, withSessionPromptCacheState, type Message, type PendingMessage, type ChatInputAnswer, type ChatInputOption, type ChatInputQuestion, type ChatInputRequest, type ToolCallResult, type ToolResultContent, type ToolResultTerminalContent, type Turn, type ITurnTokenTotal, type UsageInfo, type UsageInfoMeta, type IContextAttributionData, type ISessionPromptCacheState } from '../../common/state/sessionState.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import type { IExitPlanModeResponse } from './copilotAgent.js';
 import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
@@ -527,6 +527,46 @@ class CopilotTurn {
 	 * its usage events in order to report it on the subagent's child session.
 	 */
 	readonly subagentNanoAiuByToolCallId = new Map<string, number>();
+
+	/**
+	 * Whole-turn token consumption keyed by model id. Every model call in the
+	 * turn contributes — the parent agent's calls, every subagent's calls, and
+	 * the summarization call a compaction performs — so the totals describe what
+	 * the turn as a whole consumed rather than just its last call. Subagents may
+	 * run on a different model than the parent, hence the per-model keying.
+	 */
+	private readonly _tokenTotalsByModel = new Map<string, Mutable<ITurnTokenTotal>>();
+
+	/**
+	 * Folds one model call's token counts into the turn's per-model totals.
+	 * Calls without a model id are ignored: they cannot be attributed, and every
+	 * usage-reporting path this session has carries one.
+	 */
+	addTokenTotals(model: string | undefined, tokens: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }): void {
+		if (!model) {
+			return;
+		}
+		let total = this._tokenTotalsByModel.get(model);
+		if (!total) {
+			total = { model, inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
+			this._tokenTotalsByModel.set(model, total);
+		}
+		total.inputTokens += toTokenCount(tokens.inputTokens);
+		total.cachedTokens += toTokenCount(tokens.cacheReadTokens);
+		total.outputTokens += toTokenCount(tokens.outputTokens);
+	}
+
+	/**
+	 * The turn's per-model totals, or `undefined` when nothing has been recorded.
+	 * Rows are cloned: the map keeps mutating its own copies as further calls are
+	 * recorded, and an already-emitted or already-compared usage object must not
+	 * change retroactively underneath its consumers.
+	 */
+	get tokenTotals(): readonly ITurnTokenTotal[] | undefined {
+		return this._tokenTotalsByModel.size > 0
+			? [...this._tokenTotalsByModel.values()].map(total => ({ ...total }))
+			: undefined;
+	}
 
 	/**
 	 * The parent (main-agent) turn's own last context usage — model plus token
@@ -1959,6 +1999,13 @@ export class CopilotAgentSession extends Disposable {
 					// so the report carries both.
 					await this._refreshSessionUsageMetrics();
 					const copilotUsage = this._parentCopilotUsageMeta();
+					// This emit replaces the turn's usage in the reducer, so carry the
+					// whole-turn token totals accumulated so far too.
+					const turnTokenTotals = this._currentTurn?.tokenTotals;
+					const meta: UsageInfoMeta = {
+						...(copilotUsage ? { copilotUsage } : {}),
+						...(turnTokenTotals ? { turnTokenTotals } : {}),
+					};
 					this._emitAction({
 						type: ActionType.ChatUsage,
 						turnId: this._turnId,
@@ -1966,7 +2013,7 @@ export class CopilotAgentSession extends Disposable {
 							inputTokens: usedTokens,
 							outputTokens: 0,
 							model: this._lastSeenModelId,
-							...(copilotUsage ? { _meta: { copilotUsage } } : {}),
+							...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
 						},
 					});
 				}
@@ -4288,6 +4335,12 @@ export class CopilotAgentSession extends Disposable {
 				turn.parentContextUsage = eventContext;
 			}
 
+			// Fold this model call into the turn's whole-turn per-model totals.
+			// Done once per event, before the usage objects are built, so a
+			// subagent call counts toward the turn under its own model without
+			// being counted twice by the parent and subagent emits below.
+			turn?.addTokenTotals(eventContext.model, eventContext);
+
 			// Builds a usage object carrying the given context's tokens/model plus
 			// the credit total for the given scope. `copilotUsage` is the scope's
 			// Copilot billing metadata, or `undefined` when nothing is billed yet.
@@ -4304,6 +4357,12 @@ export class CopilotAgentSession extends Disposable {
 				}
 				if (quotaSnapshots) {
 					metadata.quotaSnapshots = quotaSnapshots;
+				}
+				// Only the parent scope reports whole-turn totals; a subagent's
+				// own usage describes just its component of the turn.
+				const turnTokenTotals = isParentScope ? turn?.tokenTotals : undefined;
+				if (turnTokenTotals) {
+					metadata.turnTokenTotals = turnTokenTotals;
 				}
 				return {
 					inputTokens: context.inputTokens,
@@ -4421,6 +4480,13 @@ export class CopilotAgentSession extends Disposable {
 				return;
 			}
 			const copilotUsage = readCopilotUsage(e.data.compactionTokensUsed);
+			const turn = this._currentTurn;
+			const compactionTokens = e.data.compactionTokensUsed;
+			turn?.addTokenTotals(compactionTokens?.model ?? this._lastSeenModelId, {
+				inputTokens: compactionTokens?.inputTokens,
+				outputTokens: compactionTokens?.outputTokens,
+				cacheReadTokens: compactionTokens?.cacheReadTokens,
+			});
 			// Report the turn's cost before awaiting anything. The terminal `session.idle`
 			// can arrive while the metrics read is in flight and close the turn, after
 			// which the reducer drops usage for it — so a compaction whose turn ends
@@ -4429,7 +4495,8 @@ export class CopilotAgentSession extends Disposable {
 			const emitParentUsage = (): string | undefined => {
 				const turnId = this._turnId;
 				const parentCopilotUsage = this._parentCopilotUsageMeta();
-				if (!turnId || !parentCopilotUsage) {
+				const turnTokenTotals = this._currentTurn?.tokenTotals;
+				if (!turnId || (!parentCopilotUsage && !turnTokenTotals)) {
 					return undefined;
 				}
 				// Preserve the parent turn's own model/context tokens: the compaction call's tokens describe
@@ -4440,7 +4507,8 @@ export class CopilotAgentSession extends Disposable {
 					model: base?.model ?? this._lastSeenModelId,
 					_meta: {
 						...(base?._meta ?? {}),
-						copilotUsage: parentCopilotUsage,
+						...(parentCopilotUsage ? { copilotUsage: parentCopilotUsage } : {}),
+						...(turnTokenTotals ? { turnTokenTotals } : {}),
 					},
 				};
 				lastParentUsage = usage;
@@ -4453,7 +4521,6 @@ export class CopilotAgentSession extends Disposable {
 				return turnId;
 			};
 
-			const turn = this._currentTurn;
 			if (turn && copilotUsage) {
 				turn.copilotNanoAiu += copilotUsage.totalNanoAiu;
 				emitParentUsage();
@@ -5325,6 +5392,15 @@ function readCopilotUsage(raw: unknown): { totalNanoAiu: number } & Record<strin
 		return undefined;
 	}
 	return { ...(usage as Record<string, unknown>), totalNanoAiu };
+}
+
+/**
+ * Normalizes one reported token count into a value safe to accumulate. The SDK
+ * types the fields as numbers, but they are absent on some events and this
+ * guards against a malformed runtime payload skewing the turn's totals.
+ */
+function toTokenCount(value: number | undefined): number {
+	return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
 
 /**
