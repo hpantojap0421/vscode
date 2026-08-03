@@ -7,9 +7,11 @@ import { DocumentId } from '../../../platform/inlineEdits/common/dataTypes/docum
 import { RootedEdit } from '../../../platform/inlineEdits/common/dataTypes/edit';
 import { DiffHistoryOptions } from '../../../platform/inlineEdits/common/dataTypes/xtabPromptOptions';
 import { StatelessNextEditDocument } from '../../../platform/inlineEdits/common/statelessNextEditProvider';
-import { IXtabHistoryEditEntry, IXtabHistoryEntry } from '../../../platform/inlineEdits/common/workspaceEditTracker/nesXtabHistoryTracker';
+import { IXtabHistoryEditEntry, IXtabHistoryEntry, IXtabHistoryRejectedEditEntry } from '../../../platform/inlineEdits/common/workspaceEditTracker/nesXtabHistoryTracker';
 import { groupAdjacentBy, pushMany } from '../../../util/vs/base/common/arrays';
 import { toUniquePath } from './promptCraftingUtils';
+
+export const REJECTED_EDIT_TAG = '<|rejected/|>';
 
 export interface EditDiffHistoryResult {
 	readonly promptPiece: string;
@@ -23,10 +25,11 @@ export function getEditDiffHistory(
 	docsInPrompt: Set<DocumentId>,
 	computeTokens: (s: string) => number,
 	{ onlyForDocsInPrompt, maxTokens, nEntries, useRelativePaths }: DiffHistoryOptions,
+	rejectedEditHistory: readonly IXtabHistoryRejectedEditEntry[] = [],
 ): EditDiffHistoryResult {
 	const workspacePath = useRelativePaths ? activeDoc.workspaceRoot?.path : undefined;
 
-	const reversedHistory = xtabHistory.slice().reverse();
+	const reversedHistory = mergeRejectionsIntoHistory(xtabHistory, rejectedEditHistory).reverse();
 
 	let tokenBudget = maxTokens;
 	let totalTokensConsumed = 0;
@@ -47,12 +50,20 @@ export function getEditDiffHistory(
 			continue;
 		}
 
-		const docDiff = generateDocDiff(entry, workspacePath);
+		const docDiff = entry.kind === 'rejectedEdit'
+			? generateRejectedDocDiff(entry, workspacePath)
+			: generateDocDiff(entry, workspacePath);
 		if (docDiff === null) {
 			continue;
 		}
 
 		const tokenCount = computeTokens(docDiff);
+
+		// Skip large rejection diffs rather than starving the diff history.
+		// TODO experiment: truncate the diff to fit within the token budget.
+		if (tokenCount > tokenBudget && entry.kind === 'rejectedEdit') {
+			continue;
+		}
 
 		tokenBudget -= tokenCount;
 
@@ -74,6 +85,40 @@ export function getEditDiffHistory(
 	}
 
 	return { promptPiece, nDiffs: allDiffs.length, totalTokens: totalTokensConsumed };
+}
+
+function mergeRejectionsIntoHistory(xtabHistory: readonly IXtabHistoryEntry[], rejectedEditHistory: readonly IXtabHistoryRejectedEditEntry[]): (IXtabHistoryEntry | IXtabHistoryRejectedEditEntry)[] {
+	if (rejectedEditHistory.length === 0) {
+		return xtabHistory.slice();
+	}
+
+	const history: (IXtabHistoryEntry | IXtabHistoryRejectedEditEntry)[] = [];
+	let rejectedIndex = 0;
+	for (const entry of xtabHistory) {
+		while (true) {
+			const rejectedEntry = rejectedEditHistory[rejectedIndex];
+			if (rejectedEntry?.sequence === undefined || rejectedEntry.sequence >= entry.sequence) {
+				break;
+			}
+			history.push(rejectedEntry);
+			rejectedIndex++;
+		}
+		history.push(entry);
+	}
+	pushMany(history, rejectedEditHistory.slice(rejectedIndex));
+	return history;
+}
+
+function generateRejectedDocDiff(entry: IXtabHistoryRejectedEditEntry, workspacePath: string | undefined): string {
+	const docDiffLines: string[] = [];
+	for (const hunk of entry.hunks) {
+		docDiffLines.push(`@@ -${hunk.startLineNumber},${hunk.oldLines.length} +${hunk.startLineNumber},${hunk.newLines.length} @@ ${REJECTED_EDIT_TAG}`);
+		pushMany(docDiffLines, hunk.oldLines.map(x => `-${x}`));
+		pushMany(docDiffLines, hunk.newLines.map(x => `+${x}`));
+	}
+
+	const uniquePath = toUniquePath(entry.docId, workspacePath);
+	return [`--- ${uniquePath}`, `+++ ${uniquePath}`, ...docDiffLines].join('\n');
 }
 
 function generateDocDiff(entry: IXtabHistoryEditEntry, workspacePath: string | undefined): string | null {
@@ -137,4 +182,3 @@ function generateDocDiff(entry: IXtabHistoryEditEntry, workspacePath: string | u
 
 	return docDiff;
 }
-
