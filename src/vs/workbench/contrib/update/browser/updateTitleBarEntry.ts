@@ -125,13 +125,14 @@ export class UpdateTitleBarContribution extends Disposable implements IWorkbench
 
 		if (additionalMenuPlacement) {
 			const { menuId, item } = additionalMenuPlacement;
+			// Keep the chat-in-progress gate scoped to the editor title bar; secondary placements apply their own when-clause.
 			MenuRegistry.appendMenuItem(menuId, {
 				...item,
 				command: {
 					id: UPDATE_TITLE_BAR_ACTION_ID,
 					title: localize('updateIndicatorTitleBarAction', 'Update'),
 				},
-				when: ContextKeyExpr.and(UPDATE_TITLE_BAR_CONTEXT, UPDATE_TITLE_BAR_CHAT_IN_PROGRESS_CONTEXT.negate(), item.when),
+				when: ContextKeyExpr.and(UPDATE_TITLE_BAR_CONTEXT, item.when),
 			});
 			this._register(actionViewItemService.register(
 				menuId,
