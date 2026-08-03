@@ -12,6 +12,11 @@
   {
     "kind": 1,
     "language": "markdown",
+    "value": "Milestone 1.126.0 → June sprint goals"
+  },
+  {
+    "kind": 1,
+    "language": "markdown",
     "value": "### Finalization"
   },
   {
@@ -22,11 +27,21 @@
   {
     "kind": 1,
     "language": "markdown",
+    "value": "Tracks issues marked for API finalization"
+  },
+  {
+    "kind": 1,
+    "language": "markdown",
     "value": "### Proposals"
   },
   {
     "kind": 2,
     "language": "github-issues",
     "value": "$REPO $MILESTONE is:open label:api-proposal sort:created-asc"
+  },
+  {
+    "kind": 1,
+    "language": "markdown",
+    "value": "Lists open API proposals sorted by creation date"
   }
 ]
